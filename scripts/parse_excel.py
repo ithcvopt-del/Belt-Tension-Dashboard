@@ -1,5 +1,5 @@
-"""Parse monthly Belt Tension Report workbooks into data/tension.json."""
-import glob, json, os, re, sys
+"""Parse monthly Belt Tension Report workbooks (<root>/<year>/<NN month>/*.xlsx) into a SQLite file."""
+import datetime, glob, hashlib, json, os, re, sqlite3, sys
 import openpyxl
 
 MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
@@ -55,23 +55,84 @@ def parse(path, month_idx):
                 file=os.path.relpath(path, sys.argv[1]).replace("\\", "/"),
                 lines=lines, machines=machines)
 
-def main():
-    root, out = sys.argv[1], sys.argv[2]
+LINE_COLS = ["id", "length", "lift_h", "lift_t", "lift_diff", "std", "before", "after",
+             "noload_stop", "noload_run", "load", "helix_kn", "helix_ton", "remark", "standby"]
+MACHINE_COLS = ["machine", "location", "std", "left", "right", "remark"]
+
+SCHEMA = """
+CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE reports (year INTEGER, month_idx INTEGER, month TEXT, date TEXT, file TEXT,
+                      PRIMARY KEY (year, month_idx));
+CREATE TABLE lines (year INTEGER, month_idx INTEGER, seq INTEGER, id TEXT, length REAL, lift_h REAL,
+                    lift_t REAL, lift_diff REAL, std REAL, before REAL, after REAL, noload_stop REAL,
+                    noload_run REAL, load REAL, helix_kn REAL, helix_ton REAL, remark TEXT, standby INTEGER,
+                    PRIMARY KEY (year, month_idx, seq));
+CREATE TABLE machines (year INTEGER, month_idx INTEGER, seq INTEGER, machine TEXT, location TEXT,
+                       std REAL, left REAL, right REAL, remark TEXT,
+                       PRIMARY KEY (year, month_idx, seq));
+"""
+
+def collect(root):
     reports = []
-    for p in glob.glob(os.path.join(root, "2026", "*", "*.xlsx")):
+    for p in glob.glob(os.path.join(root, "[0-9][0-9][0-9][0-9]", "*", "*.xlsx")):
         folder = os.path.basename(os.path.dirname(p))
+        year = int(os.path.basename(os.path.dirname(os.path.dirname(p))))
         m = re.match(r"(\d{2})", folder)
         if m and not os.path.basename(p).startswith("~$"):
-            reports.append(parse(p, int(m[1]) - 1))
-    reports.sort(key=lambda r: r["month_idx"])
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    data = dict(year=2026, levels=LEVELS, reports=reports)
-    json.dump(data, open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    # Same data as a script so index.html also works when opened straight from disk
-    with open(os.path.splitext(out)[0] + ".js", "w", encoding="utf-8") as f:
-        f.write("window.TENSION_DATA = " + json.dumps(data, ensure_ascii=False) + ";\n")
+            r = parse(p, int(m[1]) - 1)
+            r["year"] = year
+            reports.append(r)
+    reports.sort(key=lambda r: (r["year"], r["month_idx"]))
+    return reports
+
+def write_db(reports, out):
+    """Rebuild the SQLite file from scratch so it always mirrors the Excel folders."""
+    os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
+    tmp = out + ".tmp"
+    if os.path.exists(tmp):
+        os.remove(tmp)
+    con = sqlite3.connect(tmp)
+    con.executescript(SCHEMA)
     for r in reports:
-        print(r["month"], r["date"], len(r["lines"]), "lines", len(r["machines"]), "machine pts")
+        key = (r["year"], r["month_idx"])
+        con.execute("INSERT INTO reports VALUES (?,?,?,?,?)", key + (r["month"], r["date"], r["file"]))
+        for i, l in enumerate(r["lines"]):
+            con.execute(f"INSERT INTO lines VALUES ({','.join('?' * (len(LINE_COLS) + 3))})",
+                        key + (i,) + tuple(int(l[c]) if c == "standby" else l[c] for c in LINE_COLS))
+        for i, mc in enumerate(r["machines"]):
+            con.execute(f"INSERT INTO machines VALUES ({','.join('?' * (len(MACHINE_COLS) + 3))})",
+                        key + (i,) + tuple(mc[c] for c in MACHINE_COLS))
+    # Fingerprint of the content only, so an unchanged rebuild can be detected and not re-pushed
+    digest = hashlib.sha256(json.dumps(reports, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    con.executemany("INSERT INTO meta VALUES (?,?)", [
+        ("updated_at", datetime.datetime.now().astimezone().isoformat(timespec="seconds")),
+        ("content_hash", digest),
+    ])
+    con.commit()
+    con.close()
+    os.replace(tmp, out)
+    return digest
+
+def read_hash(path):
+    if not os.path.exists(path):
+        return None
+    con = sqlite3.connect(path)
+    try:
+        row = con.execute("SELECT value FROM meta WHERE key='content_hash'").fetchone()
+        return row[0] if row else None
+    except sqlite3.Error:
+        return None
+    finally:
+        con.close()
+
+def main():
+    root, out = sys.argv[1], sys.argv[2]
+    reports = collect(root)
+    old = read_hash(out)
+    new = write_db(reports, out)
+    for r in reports:
+        print(r["year"], r["month"], r["date"], len(r["lines"]), "lines", len(r["machines"]), "machine pts")
+    print("changed" if old != new else "unchanged")
 
 if __name__ == "__main__":
     main()

@@ -92,6 +92,8 @@ footer { color: var(--muted); font-size: 12px; margin-top: 24px; }
     <div class="controls">
       <label for="month">เดือนที่ดู</label>
       <select id="month"></select>
+      <button class="chip" id="refresh" title="โหลดข้อมูลล่าสุดจาก GitHub">⟳ Refresh ข้อมูล</button>
+      <span class="note" id="status" style="margin:0;width:100%;text-align:right"></span>
     </div>
   </header>
 
@@ -151,22 +153,27 @@ footer { color: var(--muted); font-size: 12px; margin-top: 24px; }
 
   <footer>
     เกณฑ์สถานะ: ปกติ = ภายใน ±5% ของมาตรฐาน · เฝ้าระวัง = ±5–10% · ผิดเกณฑ์ = เกิน ±10% ·
-    ข้อมูลจาก Tension Report 2026 Rev00 (ม.ค.–ต.ค.) · อัปเดตข้อมูลด้วย <code>python scripts/parse_excel.py .. data/tension.json</code>
+    ข้อมูลจาก Tension Report รายเดือน · ข้อมูลเก็บใน <code>data/tension.db</code> (SQLite) · อัปเดตจาก Excel ด้วย <code>python scripts/sync.py</code>
   </footer>
 </div>
 <div class="tip" id="tip"></div>
 
-<script src="data/tension.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 <script>
-const D = window.TENSION_DATA;
-const R = D.reports;
+// Data lives in data/tension.db (SQLite) in the GitHub repo. The API serves the latest commit
+// immediately; the Pages copy is the fallback (it lags a minute behind each push).
+const DB_SOURCES = [
+  { url: "https://api.github.com/repos/ithcvopt-del/Belt-Tension-Dashboard/contents/data/tension.db?ref=main",
+    headers: { Accept: "application/vnd.github.raw" } },
+  { url: "data/tension.db", headers: {} },
+];
+let D, R, lineIds;
 const TH = {Jan:"ม.ค.",Feb:"ก.พ.",Mar:"มี.ค.",Apr:"เม.ย.",May:"พ.ค.",Jun:"มิ.ย.",Jul:"ก.ค.",Aug:"ส.ค.",Sep:"ก.ย.",Oct:"ต.ค.",Nov:"พ.ย.",Dec:"ธ.ค."};
 const $ = s => document.querySelector(s);
 const fmt = (v, d = 2) => v == null ? "–" : (+v).toFixed(d).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
 const pct = (v, s) => v != null && s ? v / s * 100 : null;
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const lineIds = R[0].lines.map(l => l.id);
-const state = { m: R.length - 1, phase: "before", line: "S2C" };
+const state = { m: 0, phase: "before", line: "S2C" };
 
 function status(p) {
   if (p == null) return { key: "na", label: "ไม่มีข้อมูล", color: "var(--muted)", icon: "–" };
@@ -361,7 +368,7 @@ function renderMachines() {
 
 function renderTables() {
   const r = R[state.m];
-  document.querySelectorAll(".mlabel").forEach(e => e.textContent = `${TH[r.month]} ${D.year}`);
+  document.querySelectorAll(".mlabel").forEach(e => e.textContent = `${TH[r.month]} ${r.year}`);
   $("#dateNote").textContent = `วันที่ตรวจ: ${r.date ? new Date(r.date).toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" }) : "–"} · ไฟล์: ${r.file}`;
   let h = `<tr><th>ไลน์</th><th class="num">ความยาว (ม.)</th><th class="num">Lift Diff</th><th class="num">มาตรฐาน 100% (t)</th><th class="num">ก่อนปรับ (t)</th><th class="num">%</th><th>สถานะก่อน</th><th class="num">หลังปรับ (t)</th><th class="num">%</th><th>สถานะหลัง</th><th class="num">No-Load Run</th><th class="num">Load</th><th class="num">Helix (t)</th><th>หมายเหตุ</th></tr>`;
   for (const l of r.lines) {
@@ -384,9 +391,67 @@ function renderTables() {
 
 function renderAll() { renderKpis(); renderHeat(); renderTrend(); renderChips(); renderMachines(); renderTables(); }
 
-$("#range").textContent = `${TH[R[0].month]}–${TH[R[R.length - 1].month]} ${D.year} (${R.length} เดือน)`;
-$("#month").innerHTML = R.map((r, i) => `<option value="${i}">${TH[r.month]} ${D.year}</option>`).join("");
-$("#month").value = state.m;
+const SQL_READY = initSqlJs({ locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${f}` });
+
+async function fetchDb() {
+  let lastErr;
+  for (const src of DB_SOURCES) {
+    try {
+      const sep = src.url.includes("?") ? "&" : "?";
+      const res = await fetch(`${src.url}${sep}t=${Date.now()}`, { headers: src.headers, cache: "no-store" });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      return new Uint8Array(await res.arrayBuffer());
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr;
+}
+
+function readDb(bytes, SQL) {
+  const db = new SQL.Database(bytes);
+  const rows = sql => { const r = db.exec(sql)[0]; return r ? r.values.map(v => Object.fromEntries(r.columns.map((c, i) => [c, v[i]]))) : []; };
+  const meta = Object.fromEntries(rows("SELECT key, value FROM meta").map(r => [r.key, r.value]));
+  const lines = rows("SELECT * FROM lines ORDER BY year, month_idx, seq");
+  const machines = rows("SELECT * FROM machines ORDER BY year, month_idx, seq");
+  const reports = rows("SELECT * FROM reports ORDER BY year, month_idx").map(r => {
+    const same = x => x.year === r.year && x.month_idx === r.month_idx;
+    return { ...r, lines: lines.filter(same).map(l => ({ ...l, standby: !!l.standby })), machines: machines.filter(same) };
+  });
+  db.close();
+  return { year: reports.length ? reports[reports.length - 1].year : null, meta, reports };
+}
+
+async function load() {
+  const btn = $("#refresh");
+  btn.disabled = true; btn.textContent = "⟳ กำลังโหลด…";
+  try {
+    const [SQL, bytes] = await Promise.all([SQL_READY, fetchDb()]);
+    const keepMonth = R && R[state.m] ? `${R[state.m].year}-${R[state.m].month_idx}` : null;
+    D = readDb(bytes, SQL); R = D.reports;
+    if (!R.length) throw new Error("ไม่มีข้อมูลในฐานข้อมูล");
+    lineIds = [...new Set(R.flatMap(r => r.lines.map(l => l.id)))];
+    const kept = R.findIndex(r => `${r.year}-${r.month_idx}` === keepMonth);
+    state.m = kept >= 0 ? kept : R.length - 1;
+    const first = R[0], last = R[R.length - 1];
+    $("#range").textContent = `${TH[first.month]} ${first.year}–${TH[last.month]} ${last.year} (${R.length} เดือน)`;
+    $("#month").innerHTML = R.map((r, i) => `<option value="${i}">${TH[r.month]} ${r.year}</option>`).join("");
+    $("#month").value = state.m;
+    findings();
+    renderAll();
+    const up = D.meta.updated_at ? new Date(D.meta.updated_at).toLocaleString("th-TH") : "–";
+    $("#status").textContent = `ข้อมูลอัปเดต: ${up} · โหลดล่าสุด: ${new Date().toLocaleTimeString("th-TH")}`;
+  } catch (e) {
+    $("#status").textContent = `โหลดข้อมูลไม่สำเร็จ: ${e.message}`;
+  } finally {
+    btn.disabled = false; btn.textContent = "⟳ Refresh ข้อมูล";
+  }
+}
+
+$("#refresh").onclick = load;
+// Reload when the tab comes back into view after a while, so a long-open page doesn't go stale
+let lastLoad = Date.now();
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && Date.now() - lastLoad > 5 * 60 * 1000) { lastLoad = Date.now(); load(); }
+});
 $("#month").onchange = e => { state.m = +e.target.value; renderAll(); };
 document.querySelectorAll("[data-phase]").forEach(b => b.onclick = () => {
   state.phase = b.dataset.phase;
@@ -394,8 +459,7 @@ document.querySelectorAll("[data-phase]").forEach(b => b.onclick = () => {
   renderHeat();
 });
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderHeat);
-findings();
-renderAll();
+load();
 </script>
 </body>
 </html>
