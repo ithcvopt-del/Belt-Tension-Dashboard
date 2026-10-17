@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Belt Tension Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+  --s1: #2a78d6; --s2: #eb6834; --s3: #898781;
+  --band: rgba(12,163,12,0.08);
+  --good: #0ca30c; --warn: #fab219; --serious: #ec835a; --crit: #d03b3b;
+  --good-text: #006300; --crit-text: #b02a2a;
+  --mid: #f0efec;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --s1: #3987e5; --s2: #d95926; --band: rgba(12,163,12,0.12);
+    --good-text: #0ca30c; --crit-text: #e66767; --mid: #383835;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+  --s1: #3987e5; --s2: #d95926; --band: rgba(12,163,12,0.12);
+  --good-text: #0ca30c; --crit-text: #e66767; --mid: #383835;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink);
+  font: 15px/1.5 "Sarabun", system-ui, -apple-system, "Segoe UI", sans-serif; }
+.wrap { max-width: 1240px; margin: 0 auto; padding: 24px 16px 48px; }
+header { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: end; justify-content: space-between; margin-bottom: 20px; }
+h1 { font-size: 26px; margin: 0; line-height: 1.2; }
+h2 { font-size: 18px; margin: 0 0 4px; }
+.sub { color: var(--ink-2); margin: 4px 0 0; }
+.note { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+.controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+select, button.chip { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+button.chip[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 16px; min-width: 0; }
+.grid { display: grid; gap: 16px; }
+.kpis { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); margin-bottom: 16px; }
+.kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.kpi .label { color: var(--ink-2); font-size: 13px; }
+.kpi .value { font-size: 30px; font-weight: 700; line-height: 1.2; }
+.kpi .hint { color: var(--muted); font-size: 12px; }
+.two { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }
+@media (max-width: 900px) { .two { grid-template-columns: 1fr; } }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th { color: var(--ink-2); font-weight: 600; font-size: 13px; }
+th:first-child, td:first-child { text-align: left; }
+td.rm { text-align: left; white-space: normal; min-width: 180px; color: var(--ink-2); }
+td.num, th.num { font-variant-numeric: tabular-nums; }
+.heat td { text-align: center; font-variant-numeric: tabular-nums; border: 2px solid var(--surface); border-radius: 4px; padding: 7px 4px; min-width: 52px; }
+.heat th { text-align: center; }
+.heat td:first-child { text-align: left; font-weight: 600; }
+.badge { display: inline-flex; gap: 4px; align-items: center; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--ink-2); margin: 6px 0 10px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 14px; height: 4px; border-radius: 2px; display: inline-block; }
+.scale { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.scale .bar { height: 10px; width: 180px; border-radius: 5px; }
+svg text { font-family: inherit; }
+.tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--surface); padding: 8px 10px;
+  border-radius: 8px; font-size: 13px; line-height: 1.4; opacity: 0; transition: opacity .1s; z-index: 10; max-width: 260px; }
+ul.findings { margin: 0; padding-left: 20px; }
+ul.findings li { margin-bottom: 8px; }
+ul.findings b { color: var(--ink); }
+.tag { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--ink-2); margin-right: 6px; }
+footer { color: var(--muted); font-size: 12px; margin-top: 24px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Belt Tension Dashboard 2026</h1>
+      <p class="sub">สรุปผลตรวจวัดแรงตึงสายพาน (Check List of Belt Tension) รายเดือน · <span id="range"></span></p>
+    </div>
+    <div class="controls">
+      <label for="month">เดือนที่ดู</label>
+      <select id="month"></select>
+    </div>
+  </header>
+
+  <section class="grid kpis" id="kpis"></section>
+
+  <section class="card">
+    <h2>ข้อค้นพบสำคัญ</h2>
+    <p class="note">สรุปจากข้อมูลทุกเดือน (คำนวณจากไฟล์ Excel อัตโนมัติ)</p>
+    <ul class="findings" id="findings"></ul>
+  </section>
+
+  <section class="card">
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;align-items:start">
+      <div>
+        <h2>Heatmap: แรงตึงจริงเทียบค่ามาตรฐาน (% ของ 100%)</h2>
+        <p class="note">น้ำเงิน = หย่อนกว่ามาตรฐาน · แดง = ตึงเกินมาตรฐาน · เทา = ใกล้ 100% · คลิกชื่อไลน์เพื่อดูแนวโน้ม</p>
+      </div>
+      <div class="controls" role="group" aria-label="ช่วงการวัด">
+        <button class="chip" data-phase="before" aria-pressed="true">ก่อนปรับ (Before)</button>
+        <button class="chip" data-phase="after" aria-pressed="false">หลังปรับ (After)</button>
+      </div>
+    </div>
+    <div class="scale"><span>≤60%</span><span class="bar" id="scalebar"></span><span>≥140%</span></div>
+    <div class="scroll"><table class="heat" id="heat"></table></div>
+  </section>
+
+  <section class="grid two">
+    <div class="card">
+      <h2>แนวโน้มรายไลน์: <span id="lineName"></span></h2>
+      <p class="note">แถบเขียว = ช่วง 90–110% ของค่ามาตรฐาน</p>
+      <div class="controls" id="lineChips" style="margin-bottom:8px"></div>
+      <div class="legend">
+        <span><i class="sw" style="background:var(--s1)"></i>ก่อนปรับ (Before)</span>
+        <span><i class="sw" style="background:var(--s2)"></i>หลังปรับ (After)</span>
+        <span><i class="sw" style="background:var(--s3);height:2px"></i>ค่ามาตรฐาน 100%</span>
+      </div>
+      <div id="trend"></div>
+    </div>
+    <div class="card">
+      <h2>เครื่องจักร (bar) · <span class="mlabel"></span></h2>
+      <p class="note">ค่าเฉลี่ย L/R เทียบค่ามาตรฐาน 100% · เริ่มบันทึกตั้งแต่ มิ.ย. 2026</p>
+      <div id="machines"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>รายละเอียดไลน์สายพาน · <span class="mlabel"></span></h2>
+    <p class="note" id="dateNote"></p>
+    <div class="scroll"><table id="lineTable"></table></div>
+  </section>
+
+  <section class="card">
+    <h2>รายละเอียดเครื่องจักร · <span class="mlabel"></span></h2>
+    <div class="scroll"><table id="machineTable"></table></div>
+  </section>
+
+  <footer>
+    เกณฑ์สถานะ: ปกติ = ภายใน ±5% ของมาตรฐาน · เฝ้าระวัง = ±5–10% · ผิดเกณฑ์ = เกิน ±10% ·
+    ข้อมูลจาก Tension Report 2026 Rev00 (ม.ค.–ต.ค.) · อัปเดตข้อมูลด้วย <code>python scripts/parse_excel.py .. data/tension.json</code>
+  </footer>
+</div>
+<div class="tip" id="tip"></div>
+
+<script src="data/tension.js"></script>
+<script>
+const D = window.TENSION_DATA;
+const R = D.reports;
+const TH = {Jan:"ม.ค.",Feb:"ก.พ.",Mar:"มี.ค.",Apr:"เม.ย.",May:"พ.ค.",Jun:"มิ.ย.",Jul:"ก.ค.",Aug:"ส.ค.",Sep:"ก.ย.",Oct:"ต.ค.",Nov:"พ.ย.",Dec:"ธ.ค."};
+const $ = s => document.querySelector(s);
+const fmt = (v, d = 2) => v == null ? "–" : (+v).toFixed(d).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+const pct = (v, s) => v != null && s ? v / s * 100 : null;
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const lineIds = R[0].lines.map(l => l.id);
+const state = { m: R.length - 1, phase: "before", line: "S2C" };
+
+function status(p) {
+  if (p == null) return { key: "na", label: "ไม่มีข้อมูล", color: "var(--muted)", icon: "–" };
+  const d = Math.abs(p - 100);
+  if (d <= 5) return { key: "ok", label: "ปกติ", color: "var(--good)", icon: "✓" };
+  if (d <= 10) return { key: "watch", label: "เฝ้าระวัง", color: "var(--warn)", icon: "!" };
+  return { key: "bad", label: p < 100 ? "หย่อนเกิน" : "ตึงเกิน", color: "var(--crit)", icon: "✕" };
+}
+const badge = p => { const s = status(p); return `<span class="badge"><i class="dot" style="background:${s.color}"></i>${s.icon} ${s.label}</span>`; };
+
+// Diverging scale: blue (under) <- gray -> red (over), clamped to ±40%
+const isDark = () => matchMedia("(prefers-color-scheme: dark)").matches && document.documentElement.dataset.theme !== "light" || document.documentElement.dataset.theme === "dark";
+const BLUE = ["#cde2fb","#9ec5f4","#6da7ec","#3987e5","#256abf","#184f95"];
+const RED  = ["#fbd5d2","#f5aaa5","#ee7f79","#e34948","#c13332","#952424"];
+function heatColor(p) {
+  if (p == null) return null;
+  const d = Math.max(-40, Math.min(40, p - 100));
+  if (Math.abs(d) < 3) return isDark() ? "#383835" : "#f0efec";
+  const arm = d < 0 ? BLUE : RED;
+  return arm[Math.min(arm.length - 1, Math.floor((Math.abs(d) - 3) / 6.2))];
+}
+function inkFor(hex) {
+  if (!hex || hex[0] !== "#") return "var(--ink)";
+  const n = parseInt(hex.slice(1), 16), r = n >> 16, g = n >> 8 & 255, b = n & 255;
+  return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? "#0b0b0b" : "#ffffff";
+}
+
+const tip = $("#tip");
+function showTip(e, html) { tip.innerHTML = html; tip.style.opacity = 1; moveTip(e); }
+function moveTip(e) {
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  tip.style.left = Math.min(innerWidth - w - 8, e.clientX + 14) + "px";
+  tip.style.top = (e.clientY + h + 20 > innerHeight ? e.clientY - h - 12 : e.clientY + 14) + "px";
+}
+function hideTip() { tip.style.opacity = 0; }
+function bindTips(root) {
+  root.querySelectorAll("[data-tip]").forEach(el => {
+    el.addEventListener("mouseenter", e => showTip(e, el.dataset.tip));
+    el.addEventListener("mousemove", moveTip);
+    el.addEventListener("mouseleave", hideTip);
+  });
+}
+
+// ---------- analysis ----------
+const active = r => r.lines.filter(l => !l.standby && l.std);
+const sameReadings = (a, b) => {
+  const k = r => JSON.stringify([r.lines.map(l => [l.before, l.after]), r.machines.map(m => [m.left, m.right])]);
+  return k(a) === k(b);
+};
+function duplicates() {
+  const out = [];
+  R.forEach((r, i) => { for (let j = 0; j < i; j++) if (sameReadings(R[j], r)) { out.push([r, R[j]]); break; } });
+  return out;
+}
+function findings() {
+  const items = [];
+  const afterPcts = R.flatMap(r => active(r).map(l => pct(l.after, l.std)).filter(v => v != null));
+  items.push(`<span class="tag">หลังปรับ</span>ค่า After ทุกไลน์ทุกเดือนอยู่ระหว่าง <b>${Math.min(...afterPcts).toFixed(0)}–${Math.max(...afterPcts).toFixed(0)}%</b> ของมาตรฐาน — การปรับตั้งหลังตรวจวัดได้ผลดี`);
+  // lines repeatedly out of range before adjustment
+  const rows = lineIds.map(id => {
+    const ps = R.map(r => r.lines.find(l => l.id === id)).filter(l => l && !l.standby && l.std).map(l => pct(l.before, l.std));
+    const out = ps.filter(p => Math.abs(p - 100) > 10);
+    return { id, n: ps.length, out: out.length, min: Math.min(...ps), max: Math.max(...ps) };
+  }).filter(r => r.out >= 3).sort((a, b) => b.out - a.out);
+  const desc = r => r.max > 110 && r.min >= 90 ? `ตึงเกิน สูงสุด ${r.max.toFixed(0)}%` :
+                    r.min < 90 && r.max <= 110 ? `หย่อน ต่ำสุด ${r.min.toFixed(0)}%` : `แกว่ง ${r.min.toFixed(0)}–${r.max.toFixed(0)}%`;
+  const chronic = rows.filter(r => r.out / r.n >= 0.5), other = rows.filter(r => r.out / r.n < 0.5);
+  if (chronic.length) items.push(`<span class="tag">ก่อนปรับ</span>ไลน์ที่หลุดเกณฑ์ ±10% ก่อนปรับ <b>เกินครึ่งของเดือนที่วัด</b>: ${chronic.map(r => `<b>${r.id}</b> ${r.out}/${r.n} เดือน (${desc(r)})`).join(" · ")} — สายพานกลับไปยืด/หย่อนซ้ำหลังปรับทุกครั้ง ควรหาสาเหตุ (take-up, การยืดของสายพาน, ตำแหน่งวัด)`);
+  if (other.length) items.push(`<span class="tag">ก่อนปรับ</span>หลุดเกณฑ์บางเดือน: ${other.map(r => `${r.id} ${r.out}/${r.n} (${desc(r)})`).join(" · ")}`);
+  const dups = duplicates();
+  if (dups.length) items.push(`<span class="tag">คุณภาพข้อมูล</span>ค่าที่วัดได้ของเดือน <b>${dups.map(([a, b]) => `${TH[a.month]} ซ้ำกับ ${TH[b.month]}`).join(", ")}</b> ทุกจุด (ทั้งไลน์และเครื่องจักร) — น่าจะคัดลอกไฟล์เดิมมาโดยยังไม่ได้ใส่ค่าวัดใหม่ ควรตรวจสอบ`);
+  const last = R[R.length - 1];
+  const ccr = last.lines.filter(l => /CCR/.test(l.remark || ""));
+  if (ccr.length) items.push(`<span class="tag">เซนเซอร์</span>CCR อ่านค่าไม่ได้ <b>${ccr.length} ไลน์</b> (${ccr.map(l => l.id).join(", ")}) ใน ${TH[last.month]} — ไม่มีค่า Conveyor No-Load/Load ให้เทียบ`);
+  last.lines.filter(l => /ผิดปกติ|เสถียร/.test(l.remark || "")).forEach(l =>
+    items.push(`<span class="tag">เซนเซอร์</span><b>${l.id}</b>: ${esc(l.remark)}${l.load ? ` (Load ${fmt(l.load)} t = ${pct(l.load, l.std).toFixed(0)}% ของมาตรฐาน)` : ""}`));
+  const lowM = last.machines.filter(m => m.left && pct((m.left + m.right) / 2, m.std) < 80);
+  if (lowM.length) {
+    const mp = mc => pct((mc.left + mc.right) / 2, mc.std);
+    const worst = lowM.reduce((a, b) => mp(b) < mp(a) ? b : a);
+    items.push(`<span class="tag">เครื่องจักร</span>${lowM.length}/${last.machines.length} จุดต่ำกว่า 80% ของมาตรฐาน ใน ${TH[last.month]} — ต่ำสุดคือ <b>${esc(worst.machine)} ${esc(worst.location)} ${mp(worst).toFixed(0)}%</b>${worst.remark ? ` (หมายเหตุ: ${esc(worst.remark)})` : ""}`);
+  }
+  const helixGap = active(last).filter(l => l.helix_ton && l.helix_ton < l.std * 0.9);
+  if (helixGap.length) items.push(`<span class="tag">ค่ามาตรฐาน</span>ค่าจาก Helix ต่ำกว่าค่ามาตรฐาน 100% มากกว่า 10% ใน ${helixGap.map(l => `${l.id} (${fmt(l.helix_ton)} vs ${fmt(l.std)} t)`).join(", ")} — ควรทบทวนว่าจะใช้ค่าใดเป็นเกณฑ์`);
+  $("#findings").innerHTML = items.map(i => `<li>${i}</li>`).join("");
+}
+
+// ---------- render ----------
+function renderKpis() {
+  const r = R[state.m], a = active(r);
+  const beforeOut = a.filter(l => status(pct(l.before, l.std)).key === "bad").length;
+  const afterOk = a.filter(l => status(pct(l.after, l.std)).key === "ok").length;
+  const ccr = r.lines.filter(l => /CCR/.test(l.remark || "")).length;
+  const mm = r.machines.filter(m => m.left != null);
+  const mLow = mm.filter(m => pct((m.left + m.right) / 2, m.std) < 80).length;
+  const tile = (label, value, hint) => `<div class="kpi"><div class="label">${label}</div><div class="value">${value}</div><div class="hint">${hint}</div></div>`;
+  $("#kpis").innerHTML =
+    tile("ไลน์ที่ใช้งาน", `${a.length}<small style="font-size:16px;color:var(--muted)"> / ${r.lines.length}</small>`, `Standby: ${r.lines.filter(l => l.standby).map(l => l.id).join(", ") || "–"}`) +
+    tile("ก่อนปรับ: ผิดเกณฑ์ ±10%", beforeOut, `${a.length ? (beforeOut / a.length * 100).toFixed(0) : 0}% ของไลน์ที่ใช้งาน`) +
+    tile("หลังปรับ: อยู่ในเกณฑ์ ±5%", `${afterOk}/${a.length}`, "ปรับตั้งแล้วเข้าเกณฑ์") +
+    tile("CCR อ่านค่าไม่ได้", ccr, ccr ? "ต้องตรวจเซนเซอร์ Load cell" : "ไม่พบปัญหา") +
+    tile("เครื่องจักร < 80%", mm.length ? `${mLow}/${mm.length}` : "–", mm.length ? "จุดที่แรงดันต่ำกว่ามาตรฐาน" : "ยังไม่มีการบันทึกเดือนนี้");
+}
+
+function renderHeat() {
+  const bar = [...BLUE].reverse().concat([isDark() ? "#383835" : "#f0efec"], RED);
+  $("#scalebar").style.background = `linear-gradient(90deg, ${bar.join(",")})`;
+  let h = `<tr><th>ไลน์</th>${R.map((r, i) => `<th style="${i === state.m ? "color:var(--ink)" : ""}">${TH[r.month]}</th>`).join("")}</tr>`;
+  for (const id of lineIds) {
+    h += `<tr><td><a href="#" data-line="${id}" style="color:inherit">${id}</a></td>`;
+    R.forEach((r, i) => {
+      const l = r.lines.find(x => x.id === id);
+      const v = l && !l.standby ? l[state.phase] : null, p = l ? pct(v, l.std) : null;
+      const c = heatColor(p);
+      const t = l && l.standby ? `<b>${id} · ${TH[r.month]}</b><br>Standby` :
+        `<b>${id} · ${TH[r.month]}</b><br>${state.phase === "before" ? "ก่อนปรับ" : "หลังปรับ"}: ${fmt(v)} t<br>มาตรฐาน 100%: ${fmt(l?.std)} t<br>= ${p == null ? "–" : p.toFixed(1) + "%"} · ${status(p).label}${l?.remark ? "<br>" + esc(l.remark) : ""}`;
+      h += `<td data-tip="${esc(t)}" style="background:${c || "transparent"};color:${c ? inkFor(c) : "var(--muted)"};${i === state.m ? "outline:2px solid var(--ink);outline-offset:-2px" : ""}">${p == null ? (l && l.standby ? "SB" : "–") : p.toFixed(0)}</td>`;
+    });
+    h += "</tr>";
+  }
+  $("#heat").innerHTML = h;
+  bindTips($("#heat"));
+  $("#heat").querySelectorAll("[data-line]").forEach(a => a.onclick = e => { e.preventDefault(); state.line = a.dataset.line; renderTrend(); renderChips(); });
+}
+
+function renderChips() {
+  const ids = lineIds.filter(id => R.some(r => { const l = r.lines.find(x => x.id === id); return l && !l.standby; }));
+  $("#lineChips").innerHTML = ids.map(id => `<button class="chip" data-id="${id}" aria-pressed="${id === state.line}">${id}</button>`).join("");
+  $("#lineChips").querySelectorAll("button").forEach(b => b.onclick = () => { state.line = b.dataset.id; renderTrend(); renderChips(); });
+}
+
+function renderTrend() {
+  $("#lineName").textContent = state.line;
+  const pts = R.map(r => { const l = r.lines.find(x => x.id === state.line); return { r, l: l && !l.standby ? l : null }; });
+  const W = 620, H = 300, m = { t: 16, r: 54, b: 30, l: 40 };
+  const vals = pts.flatMap(p => p.l ? [p.l.before, p.l.after, p.l.std * 1.1, p.l.std * 0.9] : []).filter(v => v != null);
+  let lo = Math.floor(Math.min(...vals) - 0.3), hi = Math.ceil(Math.max(...vals) + 0.3);
+  const x = i => m.l + (W - m.l - m.r) * (i / (R.length - 1));
+  const y = v => m.t + (H - m.t - m.b) * (1 - (v - lo) / (hi - lo));
+  const step = (hi - lo) > 6 ? 2 : (hi - lo) > 3 ? 1 : 0.5;
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="แนวโน้มแรงตึง ${state.line}">`;
+  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step)
+    s += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/><text x="${m.l - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${fmt(v, 1)}</text>`;
+  s += `<text x="${m.l - 6}" y="${m.t - 4}" text-anchor="end" font-size="11" fill="var(--muted)">ตัน</text>`;
+  // 90-110% band and 100% line follow the (possibly changing) standard
+  const seg = pts.map((p, i) => p.l ? i : -1).filter(i => i >= 0);
+  if (seg.length) {
+    const top = seg.map(i => `${x(i)},${y(pts[i].l.std * 1.1)}`), bot = seg.slice().reverse().map(i => `${x(i)},${y(pts[i].l.std * 0.9)}`);
+    s += `<polygon points="${top.concat(bot).join(" ")}" fill="var(--band)"/>`;
+    s += `<polyline points="${seg.map(i => `${x(i)},${y(pts[i].l.std)}`).join(" ")}" fill="none" stroke="var(--s3)" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+  }
+  R.forEach((r, i) => s += `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="${i === state.m ? "var(--ink)" : "var(--muted)"}">${TH[r.month]}</text>`);
+  for (const [key, col] of [["before", "var(--s1)"], ["after", "var(--s2)"]]) {
+    const ok = pts.map((p, i) => p.l && p.l[key] != null ? i : -1).filter(i => i >= 0);
+    s += `<polyline points="${ok.map(i => `${x(i)},${y(pts[i].l[key])}`).join(" ")}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>`;
+    ok.forEach(i => s += `<circle cx="${x(i)}" cy="${y(pts[i].l[key])}" r="4" fill="${col}" stroke="var(--surface)" stroke-width="2"/>`);
+    const li = ok[ok.length - 1];
+    if (li != null) s += `<text x="${x(li) + 8}" y="${y(pts[li].l[key]) + (key === "before" ? 12 : -4)}" font-size="11" fill="var(--ink-2)">${key === "before" ? "Before" : "After"}</text>`;
+  }
+  // hover columns
+  R.forEach((r, i) => {
+    const l = pts[i].l;
+    const t = l ? `<b>${state.line} · ${TH[r.month]}</b><br>ก่อนปรับ: ${fmt(l.before)} t (${pct(l.before, l.std)?.toFixed(0)}%)<br>หลังปรับ: ${fmt(l.after)} t (${pct(l.after, l.std)?.toFixed(0)}%)<br>มาตรฐาน: ${fmt(l.std)} t${l.remark ? "<br>" + esc(l.remark) : ""}` : `<b>${TH[r.month]}</b><br>Standby`;
+    const w = (W - m.l - m.r) / (R.length - 1);
+    s += `<rect x="${x(i) - w / 2}" y="${m.t}" width="${w}" height="${H - m.t - m.b}" fill="transparent" data-tip="${esc(t)}"/>`;
+  });
+  $("#trend").innerHTML = s + "</svg>";
+  bindTips($("#trend"));
+}
+
+function renderMachines() {
+  const r = R[state.m];
+  if (!r.machines.length) { $("#machines").innerHTML = `<p class="note">เดือนนี้ยังไม่มีการบันทึกค่าเครื่องจักร</p>`; return; }
+  const W = 480, rowH = 26, m = { l: 190, r: 46, t: 8, b: 26 }, H = m.t + m.b + rowH * r.machines.length, max = 120;
+  const x = v => m.l + (W - m.l - m.r) * Math.min(v, max) / max;
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="แรงดันเครื่องจักรเทียบมาตรฐาน">`;
+  for (const v of [0, 50, 100]) s += `<line x1="${x(v)}" x2="${x(v)}" y1="${m.t}" y2="${H - m.b}" stroke="${v === 100 ? "var(--ink-2)" : "var(--grid)"}" ${v === 100 ? 'stroke-dasharray="4 3"' : ""}/><text x="${x(v)}" y="${H - 8}" font-size="11" text-anchor="middle" fill="var(--muted)">${v}%</text>`;
+  r.machines.forEach((mc, i) => {
+    const yy = m.t + i * rowH, avg = mc.left != null ? (mc.left + mc.right) / 2 : null, p = pct(avg, mc.std), st = status(p);
+    const short = mc.machine.replace(/\s*\(.*\)/, "").replace("Bucket Wheel", "BW").replace("Belt Wagon", "B.Wagon") + " · " + mc.location.replace(" Conv.", "");
+    s += `<text x="${m.l - 8}" y="${yy + 17}" font-size="11.5" text-anchor="end" fill="var(--ink-2)">${esc(short)}</text>`;
+    if (p != null) {
+      s += `<rect x="${m.l}" y="${yy + 5}" width="${Math.max(2, x(p) - m.l)}" height="16" rx="4" fill="${st.color}" opacity="${st.key === "ok" ? 0.85 : 1}"/>`;
+      s += `<text x="${x(p) + 6}" y="${yy + 17}" font-size="11.5" fill="var(--ink)">${p.toFixed(0)}%</text>`;
+    } else s += `<text x="${m.l + 4}" y="${yy + 17}" font-size="11.5" fill="var(--crit-text)">${esc(mc.remark || "ไม่มีข้อมูล")}</text>`;
+    const t = `<b>${esc(mc.machine)}</b><br>${esc(mc.location)}<br>L / R: ${fmt(mc.left, 0)} / ${fmt(mc.right, 0)} bar<br>มาตรฐาน: ${fmt(mc.std, 0)} bar${p != null ? `<br>= ${p.toFixed(1)}% · ${st.label}` : ""}${mc.remark ? "<br>" + esc(mc.remark) : ""}`;
+    s += `<rect x="0" y="${yy}" width="${W}" height="${rowH}" fill="transparent" data-tip="${esc(t)}"/>`;
+  });
+  $("#machines").innerHTML = s + `</svg><div class="legend"><span><i class="dot" style="background:var(--good)"></i>✓ ±5%</span><span><i class="dot" style="background:var(--warn)"></i>! ±5–10%</span><span><i class="dot" style="background:var(--crit)"></i>✕ เกิน ±10%</span></div>`;
+  bindTips($("#machines"));
+}
+
+function renderTables() {
+  const r = R[state.m];
+  document.querySelectorAll(".mlabel").forEach(e => e.textContent = `${TH[r.month]} ${D.year}`);
+  $("#dateNote").textContent = `วันที่ตรวจ: ${r.date ? new Date(r.date).toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" }) : "–"} · ไฟล์: ${r.file}`;
+  let h = `<tr><th>ไลน์</th><th class="num">ความยาว (ม.)</th><th class="num">Lift Diff</th><th class="num">มาตรฐาน 100% (t)</th><th class="num">ก่อนปรับ (t)</th><th class="num">%</th><th>สถานะก่อน</th><th class="num">หลังปรับ (t)</th><th class="num">%</th><th>สถานะหลัง</th><th class="num">No-Load Run</th><th class="num">Load</th><th class="num">Helix (t)</th><th>หมายเหตุ</th></tr>`;
+  for (const l of r.lines) {
+    if (l.standby) { h += `<tr><td><b>${l.id}</b></td><td colspan="12" style="text-align:center;color:var(--muted)">Standby</td><td class="rm"></td></tr>`; continue; }
+    const pb = pct(l.before, l.std), pa = pct(l.after, l.std);
+    h += `<tr><td><b>${l.id}</b></td><td class="num">${fmt(l.length, 1)}</td><td class="num">${fmt(l.lift_diff, 0)}</td><td class="num">${fmt(l.std)}</td>
+      <td class="num">${fmt(l.before)}</td><td class="num">${pb?.toFixed(0) ?? "–"}</td><td>${badge(pb)}</td>
+      <td class="num">${fmt(l.after)}</td><td class="num">${pa?.toFixed(0) ?? "–"}</td><td>${badge(pa)}</td>
+      <td class="num">${fmt(l.noload_run)}</td><td class="num">${fmt(l.load)}</td><td class="num">${fmt(l.helix_ton)}</td><td class="rm">${esc(l.remark || "")}</td></tr>`;
+  }
+  $("#lineTable").innerHTML = h;
+  if (!r.machines.length) { $("#machineTable").innerHTML = `<tr><td class="rm">เดือนนี้ยังไม่มีการบันทึกค่าเครื่องจักร (เริ่ม มิ.ย. 2026)</td></tr>`; return; }
+  let mh = `<tr><th>เครื่องจักร</th><th>ตำแหน่ง</th><th class="num">มาตรฐาน 100% (bar)</th><th class="num">L</th><th class="num">R</th><th class="num">% (เฉลี่ย)</th><th>สถานะ</th><th>หมายเหตุ</th></tr>`;
+  for (const mc of r.machines) {
+    const p = mc.left != null ? pct((mc.left + mc.right) / 2, mc.std) : null;
+    mh += `<tr><td>${esc(mc.machine)}</td><td style="text-align:left">${esc(mc.location)}</td><td class="num">${fmt(mc.std, 0)}</td><td class="num">${fmt(mc.left, 0)}</td><td class="num">${fmt(mc.right, 0)}</td><td class="num">${p?.toFixed(0) ?? "–"}</td><td>${badge(p)}</td><td class="rm">${esc(mc.remark || "")}</td></tr>`;
+  }
+  $("#machineTable").innerHTML = mh;
+}
+
+function renderAll() { renderKpis(); renderHeat(); renderTrend(); renderChips(); renderMachines(); renderTables(); }
+
+$("#range").textContent = `${TH[R[0].month]}–${TH[R[R.length - 1].month]} ${D.year} (${R.length} เดือน)`;
+$("#month").innerHTML = R.map((r, i) => `<option value="${i}">${TH[r.month]} ${D.year}</option>`).join("");
+$("#month").value = state.m;
+$("#month").onchange = e => { state.m = +e.target.value; renderAll(); };
+document.querySelectorAll("[data-phase]").forEach(b => b.onclick = () => {
+  state.phase = b.dataset.phase;
+  document.querySelectorAll("[data-phase]").forEach(x => x.setAttribute("aria-pressed", x === b));
+  renderHeat();
+});
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderHeat);
+findings();
+renderAll();
+</script>
+</body>
+</html>
