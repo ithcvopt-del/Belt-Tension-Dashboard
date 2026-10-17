@@ -11,7 +11,7 @@ def num(v):
 def text(v):
     return v.strip() if isinstance(v, str) and v.strip() not in ("", "-") else None
 
-def parse(path, month_idx):
+def parse(path, month_idx, root):
     ws = openpyxl.load_workbook(path, data_only=True, read_only=True).worksheets[0]
     rows = [list(r) + [None] * 25 for r in ws.iter_rows(values_only=True)]
     date = None
@@ -52,7 +52,7 @@ def parse(path, month_idx):
                 left=num(r[12]), right=num(r[13]), remark=text(r[19]),
             ))
     return dict(month=MONTHS[month_idx], month_idx=month_idx, date=date,
-                file=os.path.relpath(path, sys.argv[1]).replace("\\", "/"),
+                file=os.path.relpath(path, root).replace("\\", "/"),
                 lines=lines, machines=machines)
 
 LINE_COLS = ["id", "length", "lift_h", "lift_t", "lift_diff", "std", "before", "after",
@@ -79,7 +79,7 @@ def collect(root):
         year = int(os.path.basename(os.path.dirname(os.path.dirname(p))))
         m = re.match(r"(\d{2})", folder)
         if m and not os.path.basename(p).startswith("~$"):
-            r = parse(p, int(m[1]) - 1)
+            r = parse(p, int(m[1]) - 1, root)
             r["year"] = year
             reports.append(r)
     reports.sort(key=lambda r: (r["year"], r["month_idx"]))
